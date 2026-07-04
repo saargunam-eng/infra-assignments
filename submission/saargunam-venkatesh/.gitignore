@@ -1,0 +1,36 @@
+# Go
+bin/
+config-service
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+*.prof
+vendor/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+
+# Helm
+*.tgz
+
+# Secrets / local config
+*.env
+.env.*
+secrets.yaml
+values-local.yaml
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
