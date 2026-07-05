@@ -1,6 +1,6 @@
 # Go
 bin/
-config-service
+/config-service
 *.exe
 *.test
 *.out

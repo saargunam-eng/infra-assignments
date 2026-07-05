@@ -1,0 +1,41 @@
+replicaCount: 1
+
+image:
+  repository: config-service
+  tag: local
+  pullPolicy: Never  # image is loaded into Kind, not pulled from a registry
+
+service:
+  type: ClusterIP
+  port: 8080
+
+config:
+  appPort: "8080"
+  logLevel: "INFO"
+
+# DATABASE_URL is set here for local dev only.
+# In production, this would come from an external secrets manager.
+db:
+  url: ""  # e.g. postgres://user:pass@host:5432/dbname?sslmode=disable
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+livenessProbe:
+  httpGet:
+    path: /ping
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /ping
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 5
