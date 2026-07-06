@@ -77,9 +77,108 @@ make down
 
 ## Infrastructure Design
 
+This project follows a strict, idempotent orchestration pipeline to guarantee local reproducibility. 
+
+### 1. End-to-End Orchestration (Flowchart)
+
+```mermaid
+flowchart TD
+    User((Developer)) -->|1. make up| Make[Makefile]
+
+    subgraph S1 [Phase 1: Bootstrap & Build]
+        Make -->|make cluster| Kind[Create Kind Cluster]
+        Make -->|make build| Docker[docker build config-service:local]
+        Docker -->|make load| Load[kind load docker-image]
+    end
+
+    Load -->|2. make deploy| TF[Terraform Apply]
+
+    subgraph S2 [Phase 2: Provision via Terraform]
+        TF -->|Namespace| NS[config-service]
+        TF -->|Helm Chart| DB[(Bitnami PostgreSQL)]
+        TF -->|K8s Secret| Creds[db_password]
+        TF -->|Helm Chart| App[config-service:local Pods]
+    end
+
+    App -->|3. make wait| Wait[kubectl rollout status]
+    Wait -->|Ready| Startup[App Initialization]
+
+    subgraph S3 [Phase 3: Runtime]
+        Creds -.->|Injected as DATABASE_URL| Startup
+        Startup <-->|TCP: 5432| DB
+    end
+
+    Startup -->|4. make validate| Smoke[smoke-test.sh]
+
+    subgraph S4 [Phase 4: Verification]
+        Smoke -.->|kubectl port-forward 8080| Startup
+    end
+
+    Smoke -->|5. make down| Down[Teardown]
+
+    subgraph S5 [Phase 5: Cleanup]
+        Down -->|make tf-down| TFD[terraform destroy]
+        Down -->|make cluster-down| CD[kind delete cluster]
+    end
+```
+
+### 2. Request Lifecycle (Sequence Diagram)
+
+The Go application utilizes a clean, layered architecture ensuring validation occurs before persistence, and robust retry loops handle database unavailability during Kubernetes rollouts.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant K8s as Kubernetes Service
+    
+    box "Go Application (config-service:local)"
+        participant Handler as HTTP Handler
+        participant Service as Business Logic
+        participant Repo as Repository Layer
+    end
+    
+    participant DB as PostgreSQL Pod
+
+    Client->>K8s: POST /configs (JSON)
+    K8s->>Handler: Route Request
+    
+    activate Handler
+    Handler->>Service: Parse & Validate Payload
+    
+    activate Service
+    alt Validation Failed
+        Service-->>Handler: Error (Invalid Data)
+        Handler-->>Client: HTTP 400 Bad Request
+    else Validation Passed
+        Service->>Repo: UpsertConfig()
+        
+        activate Repo
+        Repo->>DB: SQL: INSERT INTO configs ... ON CONFLICT
+        activate DB
+        
+        alt DB Connection Refused (During Rollout)
+            DB-->>Repo: Error (Connection Refused)
+            Repo-->>Service: Error
+            Service->>Service: Retry backoff loop (up to 10x)
+            Service->>Repo: Retry UpsertConfig()
+        end
+        
+        DB-->>Repo: Success
+        deactivate DB
+        Repo-->>Service: Config Model
+        deactivate Repo
+        
+        Service-->>Handler: Config Model
+    end
+    deactivate Service
+    
+    Handler-->>Client: HTTP 201 Created (JSON)
+    deactivate Handler
+```
+
 - **Kind** — single-node local cluster, no extra daemon, fast teardown.
 - **Terraform** — single source of truth. One `terraform apply` provisions the namespace, Bitnami Postgres (Helm), and the app (Helm). One `terraform destroy` cleans up everything.
-- **Helm chart** (`helm/config-service`) — creates a Deployment, Service, ConfigMap, and Secret. Rolling update strategy.
+- **Helm chart** (`helm/config-service`) — creates a Deployment, Service, ConfigMap, and Secret. Enforces strict `securityContext` (non-root, read-only filesystem, dropped capabilities).
 - **Access** — `kubectl port-forward` for local testing. No ingress needed.
 - **Image** — multi-stage Dockerfile, distroless runtime image. Loaded into Kind via `make load`, so `imagePullPolicy: Never`.
 
