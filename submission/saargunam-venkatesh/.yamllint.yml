@@ -1,0 +1,10 @@
+extends: default
+
+rules:
+  line-length: disable
+  document-start: disable
+  braces: disable
+  truthy: disable
+
+ignore:
+  - "helm/config-service/templates/"
