@@ -13,9 +13,10 @@ vendor/
 **/.terraform/
 *.tfstate
 *.tfstate.backup
+*.tfstate.*.backup
 *.tfvars
 !*.tfvars.example
-.terraform.lock.hcl
+# .terraform.lock.hcl is intentionally committed — it pins provider versions
 crash.log
 override.tf
 override.tf.json
