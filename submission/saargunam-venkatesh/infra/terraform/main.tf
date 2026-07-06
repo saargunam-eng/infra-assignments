@@ -1,30 +1,6 @@
-terraform {
-  required_version = ">= 1.8"
-
-  required_providers {
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.12"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.27"
-    }
-  }
-}
-
-# The Kind cluster is created by 'make cluster' before Terraform runs.
-# Terraform's scope: namespace + Bitnami Postgres + app Helm release.
-provider "kubernetes" {
-  config_path    = "~/.kube/config"
-  config_context = "kind-${var.cluster_name}"
-}
-
-provider "helm" {
-  kubernetes {
-    config_path    = "~/.kube/config"
-    config_context = "kind-${var.cluster_name}"
-  }
+locals {
+  # Constructed here so the sensitive value is not repeated across set{} blocks.
+  db_url = "postgres://${var.db_user}:${var.db_password}@postgres-postgresql.${var.namespace}.svc.cluster.local:5432/${var.db_name}?sslmode=disable"
 }
 
 # ─── Namespace ────────────────────────────────────────────────────────────────
@@ -53,10 +29,23 @@ resource "helm_release" "postgres" {
     name  = "auth.username"
     value = var.db_user
   }
-  set {
+  set_sensitive {
     name  = "auth.password"
     value = var.db_password
   }
+
+  # Pin to a locally-available image tag.
+  # Chart v16.3.0 pins 17.2.0-debian-12-r2 which was removed from Docker Hub.
+  # Pre-load with: kind load docker-image bitnami/postgresql:latest --name config-service
+  set {
+    name  = "image.tag"
+    value = "latest"
+  }
+  set {
+    name  = "image.pullPolicy"
+    value = "IfNotPresent"
+  }
+
   # Minimal footprint for local dev
   set {
     name  = "primary.resources.requests.cpu"
@@ -83,9 +72,9 @@ resource "helm_release" "app" {
   wait    = true
   timeout = 120
 
-  set {
+  set_sensitive {
     name  = "db.url"
-    value = "postgres://${var.db_user}:${var.db_password}@postgres-postgresql.${var.namespace}.svc.cluster.local:5432/${var.db_name}?sslmode=disable"
+    value = local.db_url
   }
 
   depends_on = [helm_release.postgres]

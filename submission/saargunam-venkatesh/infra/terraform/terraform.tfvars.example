@@ -1,4 +1,8 @@
-# Copy this file to terraform.tfvars and fill in your values.
-# terraform.tfvars is gitignored — never commit secrets.
+# Local dev credentials — this file is gitignored and should never be committed.
+#
+# Preferred approach: export TF_VAR_db_password="your-password" (nothing written to disk)
+#
+# This file is provided as a convenience alternative for those who prefer
+# not to manage shell environment variables.
 
 db_password = "changeme"
