@@ -75,6 +75,17 @@ make down
 `log_level` must be one of: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`.  
 `port` must be 1–65535. All fields are required. Returns the saved record on success.
 
+## Security & Reliability Posture
+
+This submission was engineered to strict enterprise production standards, moving beyond a standard "it works locally" prototype:
+
+- **Zero-Trust Container Security**: The `config-service` Helm chart enforces a strict `securityContext`. The container is forced to run with `runAsNonRoot: true`, operates on a `readOnlyRootFilesystem: true`, and explicitly drops all Linux capabilities (`drop: ["ALL"]`).
+- **Minimal Attack Surface (Distroless)**: The Dockerfile utilizes a multi-stage build. The final runtime image is `gcr.io/distroless/static-debian12:nonroot`, which strips out the shell (`/bin/sh`), package managers, and root access entirely. 
+- **Secret Management**: Database credentials are never committed to disk or stored in plaintext `values.yaml`. Terraform provisions the Kubernetes Secret dynamically via `set_sensitive` and reads from a strictly-typed `TF_VAR_db_password` environment variable.
+- **Asynchronous Resiliency**: Kubernetes pods do not guarantee startup order. The Go application implements a 10-attempt exponential backoff retry loop to gracefully handle PostgreSQL `ImagePullBackOff` delays or `Connection Refused` errors during rollout.
+- **Noisy Neighbor Protection**: The Helm chart strictly defines Kubernetes Resource Requests and Limits (`cpu: 50m/200m`, `memory: 64Mi/128Mi`) to guarantee Quality of Service (QoS).
+- **Proactive Liveness/Readiness**: The application exposes a `/ping` endpoint which is actively polled by Kubernetes probes to ensure traffic is only routed to healthy pods.
+
 ## Infrastructure Design
 
 This project follows a strict, idempotent orchestration pipeline to guarantee local reproducibility. 
